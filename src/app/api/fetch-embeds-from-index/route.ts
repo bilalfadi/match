@@ -65,15 +65,28 @@ export async function POST(req: Request) {
         }
       }
 
+      // Skip obvious non-stream pages (news, articles) so we don't pick footer/nav links
+      try {
+        const path = new URL(full).pathname.toLowerCase();
+        if (/^\/(news|article|blog|category)\//.test(path) || path.startsWith("/news")) return;
+      } catch {
+        // ignore
+      }
+
       const text = $(el).text().trim();
       const lowerText = text.toLowerCase();
 
+      // Totalsportek: "Watch" | Footybite/Sportsurge/Streameast: "THANK YOU" (table links to provider)
       const looksLikeWatch =
         lowerText.includes("watch") ||
         lowerText.includes("stream") ||
-        lowerText.includes("live");
+        lowerText.includes("live") ||
+        lowerText.includes("thank you");
 
-      if (!looksLikeWatch) return;
+      // Also accept links inside a table row (stream provider table) even if text is short/numbered
+      const inTableRow = $(el).closest("tr").length > 0;
+      if (!looksLikeWatch && !inTableRow) return;
+      if (!looksLikeWatch && inTableRow && (lowerText.length < 2 || /^[\d\s\-]+$/.test(lowerText))) return;
 
       // Try to extract a provider/label from same table row or surrounding cell
       let label = text;
