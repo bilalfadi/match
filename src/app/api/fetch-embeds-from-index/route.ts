@@ -44,6 +44,31 @@ export async function POST(req: Request) {
 
     const linkMap = new Map<string, string>(); // detailUrl -> label
 
+    // Sportsurge/Streameast: real stream URLs are in hidden inputs id="linkk123" (value=URL)
+    $('input[type="hidden"][id^="linkk"]').each((_, el) => {
+      const value = $(el).attr("value");
+      if (!value) return;
+      let full: string;
+      try {
+        full = new URL(value.trim(), indexUrl).href;
+      } catch {
+        return;
+      }
+      try {
+        const path = new URL(full).pathname.toLowerCase();
+        if (/^\/(news|article|blog|category)\//.test(path) || path.startsWith("/news")) return;
+      } catch {
+        return;
+      }
+      const row = $(el).closest("tr");
+      let label = "Stream";
+      if (row.length) {
+        const firstCell = row.find("td").first().text().trim().replace(/\s+/g, " ");
+        if (firstCell) label = firstCell;
+      }
+      if (!linkMap.has(full)) linkMap.set(full, label);
+    });
+
     $("a[href]").each((_, el) => {
       const href = $(el).attr("href");
       if (!href) return;
@@ -177,10 +202,22 @@ export async function POST(req: Request) {
               )
             ) {
               embedUrl = null;
+            } else if (/^\/(news|article|blog|category)\//.test(path) || path.startsWith("/news")) {
+              embedUrl = null;
             }
           } catch {
             embedUrl = null;
           }
+        }
+
+        // Never use detail pages that are clearly news/articles (safety net)
+        try {
+          const detailPath = new URL(detailUrl).pathname.toLowerCase();
+          if (/^\/(news|article|blog|category)\//.test(detailPath) || detailPath.startsWith("/news")) {
+            continue;
+          }
+        } catch {
+          // ignore
         }
 
         if (!embedUrl) continue;
@@ -197,10 +234,19 @@ export async function POST(req: Request) {
       }
     }
 
-    // Deduplicate by embedUrl and keep only first 4
+    // Deduplicate by embedUrl, drop any news/article URLs, keep only first 4
     const seen = new Set<string>();
     const embeds: EmbedItem[] = [];
+    const isNewsOrArticle = (url: string) => {
+      try {
+        const path = new URL(url).pathname.toLowerCase();
+        return /^\/(news|article|blog|category)\//.test(path) || path.startsWith("/news");
+      } catch {
+        return true;
+      }
+    };
     for (const item of allEmbeds) {
+      if (isNewsOrArticle(item.embedUrl) || isNewsOrArticle(item.detailUrl)) continue;
       if (seen.has(item.embedUrl)) continue;
       seen.add(item.embedUrl);
       embeds.push(item);

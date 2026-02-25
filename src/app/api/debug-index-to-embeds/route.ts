@@ -45,6 +45,31 @@ export async function POST(req: Request) {
 
     const linkMap = new Map<string, string>(); // detailUrl -> label
 
+    // Sportsurge/Streameast: real stream URLs are in hidden inputs id="linkk123" (value=URL)
+    $('input[type="hidden"][id^="linkk"]').each((_, el) => {
+      const value = $(el).attr("value");
+      if (!value) return;
+      let full: string;
+      try {
+        full = new URL(value.trim(), indexUrl).href;
+      } catch {
+        return;
+      }
+      try {
+        const path = new URL(full).pathname.toLowerCase();
+        if (/^\/(news|article|blog|category)\//.test(path) || path.startsWith("/news")) return;
+      } catch {
+        return;
+      }
+      const row = $(el).closest("tr");
+      let label = "Stream";
+      if (row.length) {
+        const firstCell = row.find("td").first().text().trim().replace(/\s+/g, " ");
+        if (firstCell) label = firstCell;
+      }
+      if (!linkMap.has(full)) linkMap.set(full, label);
+    });
+
     $("a[href]").each((_, el) => {
       const href = $(el).attr("href");
       if (!href) return;
