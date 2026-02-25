@@ -21,15 +21,19 @@ function parseLanguageFromText(text: string): string | null {
 }
 
 /** Parse ads count from row (Ads column usually has 1, 2, or 3). Lower = higher priority. */
-function parseAdsFromRow($: ReturnType<typeof cheerio.load>, row: cheerio.Cheerio<cheerio.Element>): number {
+function parseAdsFromRow(
+  _: ReturnType<typeof cheerio.load>,
+  row: { find: (sel: string) => { length: number; eq: (i: number) => { text: () => string } } }
+): number {
   let ads = 99;
-  row.find("td").each((_, td) => {
-    const t = $(td).text().trim();
+  const tds = row.find("td");
+  for (let i = 0; i < tds.length; i++) {
+    const t = tds.eq(i).text().trim();
     if (t === "1" || t === "2" || t === "3") {
       ads = parseInt(t, 10);
-      return false; // break
+      break;
     }
-  });
+  }
   return ads;
 }
 
