@@ -20,6 +20,12 @@ function parseLanguageFromText(text: string): string | null {
   return m ? m[1].toLowerCase() : null;
 }
 
+/** When row has no table, try to parse ads from label/link text (e.g. "yesHD1english" -> 1). */
+function parseAdsFromLabel(text: string): number {
+  const m = text.match(/\b([123])\b/);
+  return m ? parseInt(m[1], 10) : 99;
+}
+
 /** Parse ads count from row (Ads column usually has 1, 2, or 3). Lower = higher priority. */
 function parseAdsFromRow(
   _: ReturnType<typeof cheerio.load>,
@@ -179,16 +185,25 @@ export async function POST(req: Request) {
       if (!label) label = full;
       if (!language) language = parseLanguageFromText(label);
       let ads = 99;
-      if (row.length) ads = parseAdsFromRow($, row);
+      if (row.length) {
+        ads = parseAdsFromRow($, row);
+      } else {
+        ads = parseAdsFromLabel(label);
+      }
 
       if (!linkMap.has(full)) {
         linkMap.set(full, { label, language, ads });
       }
     });
 
-    // Prefer links with 1 ad, then 2, then 3 (working sites often show "1" in Ads column)
+    // Prefer: 1) 1 ad, then 2, then 3; 2) with language first when ads equal
     const detailEntries = Array.from(linkMap.entries())
-      .sort((a, b) => a[1].ads - b[1].ads)
+      .sort((a, b) => {
+        if (a[1].ads !== b[1].ads) return a[1].ads - b[1].ads;
+        const aHasLang = a[1].language != null && a[1].language !== "";
+        const bHasLang = b[1].language != null && b[1].language !== "";
+        return aHasLang === bHasLang ? 0 : aHasLang ? -1 : 1;
+      })
       .slice(0, 40);
 
     const allEmbeds: EmbedItem[] = [];
