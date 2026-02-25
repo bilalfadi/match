@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { browserFetchEmbedUrl } from "@/lib/sources/browserFetchDetailPage";
 
 /**
  * GET /api/test-browser-fetch?url=...

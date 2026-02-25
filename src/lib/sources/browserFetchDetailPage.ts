@@ -24,7 +24,7 @@ function extractStreamUrlsFromRawHtml(html: string): string[] {
     re.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = re.exec(html)) !== null) {
-      let u = m[0].replace(/["')\]\s].*$/i, "").trim();
+      const u = m[0].replace(/["')\]\s].*$/i, "").trim();
       if (u && !seen.has(u)) {
         seen.add(u);
         out.push(u);
