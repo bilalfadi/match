@@ -1,10 +1,28 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
 import LiveMatchesSection from "@/components/LiveMatchesSection";
 import PostCard from "@/components/PostCard";
 import { getLatestPostsByCategory } from "@/lib/posts";
+import { getBaseUrl } from "@/lib/env";
 
 export const revalidate = 60;
+
+const BASE_URL = getBaseUrl();
+
+export const metadata: Metadata = {
+  title: "Watch Live Football Matches & Latest News",
+  description:
+    "Stream live football matches and stay updated with the latest football news, Premier League updates, and match schedules.",
+  alternates: { canonical: BASE_URL },
+  openGraph: {
+    url: BASE_URL,
+    title: "Watch Live Football Matches & Latest News | Football Live",
+    description: "Stream live football matches and stay updated with the latest football news.",
+    type: "website",
+  },
+  robots: { index: true, follow: true },
+};
 
 export default async function HomePage() {
   const [news, football, premierLeague] = await Promise.all([
@@ -20,7 +38,7 @@ export default async function HomePage() {
         <div
           className="absolute inset-0 bg-cover bg-center bg-no-repeat"
           style={{
-            backgroundImage: `url('https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=1920')`,
+            backgroundImage: `url('https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=1920&q=80')`,
           }}
         />
         <div className="absolute inset-0 bg-stadium-gradient" />
@@ -31,12 +49,6 @@ export default async function HomePage() {
           <p className="text-lg sm:text-xl text-gray-300 mb-8 max-w-2xl mx-auto">
             Stream the biggest games live and stay updated with breaking news, scores, and analysis from the world of football.
           </p>
-          <Link
-            href="/schedule"
-            className="inline-flex items-center gap-2 px-8 py-4 rounded-lg bg-primary text-white font-semibold hover:bg-red-600 transition shadow-lg"
-          >
-            Explore Now
-          </Link>
           <div className="mt-10 max-w-3xl mx-auto">
             <AdSlot position="hero" className="min-h-[120px]" />
           </div>

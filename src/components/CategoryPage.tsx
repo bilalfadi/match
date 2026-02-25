@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import PostCard from "@/components/PostCard";
 import AdSlot from "@/components/AdSlot";
 import { getCategoryTitle } from "@/lib/categories";
@@ -28,9 +27,11 @@ interface ApiResponse {
 export default function CategoryPage({
   category,
   initialPage = 1,
+  showTitle = true,
 }: {
   category: Category;
   initialPage?: number;
+  showTitle?: boolean;
 }) {
   const [data, setData] = useState<ApiResponse | null>(null);
   const [page, setPage] = useState(initialPage);
@@ -48,13 +49,14 @@ export default function CategoryPage({
   }, [category, page]);
 
   const title = getCategoryTitle(category);
-  const basePath = category === "premier-league" ? "/premier-league" : `/${category}`;
 
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="flex flex-col lg:flex-row gap-8">
         <div className="flex-1">
-          <h1 className="text-3xl font-bold text-white mb-6">{title}</h1>
+          {showTitle && (
+            <h1 className="text-3xl font-bold text-white mb-6">{title}</h1>
+          )}
           {loading ? (
             <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
               {[...Array(6)].map((_, i) => (

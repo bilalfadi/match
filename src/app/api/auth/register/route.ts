@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import dbConnect from "@/lib/db";
-import User from "@/lib/models/User";
+import { createUser } from "@/lib/data/users";
 import { getAdminFromRequest } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
@@ -14,14 +13,13 @@ export async function POST(req: NextRequest) {
     if (!email || !password) {
       return NextResponse.json({ error: "Email and password required" }, { status: 400 });
     }
-    await dbConnect();
-    const exists = await User.findOne({ email });
-    if (exists) {
-      return NextResponse.json({ error: "User already exists" }, { status: 400 });
-    }
-    const user = await User.create({ email, password, role: "admin" });
+    const user = await createUser({ email, password, role: "admin" });
     return NextResponse.json({ user: { id: user._id, email: user.email } });
   } catch (e) {
+    const message = e instanceof Error ? e.message : "Server error";
+    if (message === "User already exists") {
+      return NextResponse.json({ error: message }, { status: 400 });
+    }
     console.error(e);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }

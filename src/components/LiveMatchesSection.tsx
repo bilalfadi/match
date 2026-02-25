@@ -42,7 +42,7 @@ export default function LiveMatchesSection() {
         <span className="w-2 h-6 rounded bg-primary" />
         Live Matches
       </h2>
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 max-w-4xl">
         {matches.map((m) => (
           <MatchCard
             key={m.id}

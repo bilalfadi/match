@@ -33,3 +33,21 @@ html {
 ::selection {
   background: rgba(220, 38, 38, 0.4);
 }
+
+/* React Quill dark theme tweaks */
+.admin-editor .ql-toolbar.ql-snow {
+  border-color: var(--border);
+  background: rgba(15, 15, 15, 0.9);
+}
+
+.admin-editor .ql-container.ql-snow {
+  border-color: var(--border);
+  background: #111827;
+  color: #e5e5e5;
+  min-height: 260px;
+}
+
+.admin-editor .ql-editor {
+  font-size: 0.9rem;
+}
+

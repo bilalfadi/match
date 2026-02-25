@@ -36,13 +36,8 @@ export default function AdSlot({ position, className = "" }: AdSlotProps) {
   }, [position]);
 
   if (!ad?.code?.trim()) {
-    return (
-      <div
-        className={`flex items-center justify-center min-h-[90px] bg-dark-card/50 rounded-lg border border-dark-border text-gray-500 text-sm ${className}`}
-      >
-        Ad slot
-      </div>
-    );
+    // No active ad configured for this slot yet – render nothing
+    return null;
   }
 
   return (

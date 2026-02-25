@@ -8,7 +8,6 @@ const footerSections = [
       { href: "/premier-league", label: "Premier League" },
       { href: "/football", label: "Football" },
       { href: "/news", label: "News" },
-      { href: "/schedule", label: "Football Schedule" },
     ],
   },
   {

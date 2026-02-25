@@ -1,0 +1,51 @@
+[
+  {
+    "slug": "about",
+    "title": "About Us",
+    "content": "<p><strong>Football Live</strong> is a sports media platform dedicated to bringing you live football matches and the latest news from the world of football.</p><p>We cover major leagues, including the Premier League, and provide up-to-date scores, schedules, and analysis.</p><p>For any inquiries, please visit our <a href=\"/contact\" rel=\"noopener noreferrer\" target=\"_blank\">Contact</a> page.</p>",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:46:40.343Z"
+  },
+  {
+    "slug": "disclaimer",
+    "title": "Disclaimer",
+    "content": "\n      <p>The information provided on Football Live is for general informational and entertainment purposes only.</p>\n      <p>We do not host or stream any copyrighted content. All stream links are provided by third parties and we do not have control over external streams.</p>\n      <p>If you are a rights holder and believe content on this site infringes your rights, please contact us via the DMCA email on the Contact page.</p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  },
+  {
+    "slug": "terms",
+    "title": "Terms & Conditions",
+    "content": "\n      <p>By accessing and using Football Live, you accept and agree to be bound by these Terms and Conditions.</p>\n      <h2>Use of Service</h2>\n      <p>You agree to use this service only for lawful purposes and in a way that does not infringe the rights of others.</p>\n      <h2>Content</h2>\n      <p>Content may include links to third-party streams. We do not endorse or assume responsibility for third-party content.</p>\n      <h2>Changes</h2>\n      <p>We may update these terms from time to time. Continued use of the site after changes constitutes acceptance.</p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  },
+  {
+    "slug": "privacy",
+    "title": "Privacy Policy",
+    "content": "\n      <p>Football Live respects your privacy. This policy describes how we collect, use, and protect your information.</p>\n      <h2>Information We Collect</h2>\n      <p>We may collect information you provide (e.g. when contacting us), usage data (e.g. pages visited), and technical data (e.g. IP address) for analytics and security.</p>\n      <h2>Cookies</h2>\n      <p>We use cookies and similar technologies as described in our <a href=\"/cookies\">Cookies Policy</a>.</p>\n      <h2>Your Rights</h2>\n      <p>You may have rights to access, correct, or delete your data depending on your jurisdiction. Contact us for privacy requests.</p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  },
+  {
+    "slug": "cookies",
+    "title": "Cookies Policy",
+    "content": "\n      <p>Football Live uses cookies and similar technologies to improve your experience, analyze traffic, and support advertising.</p>\n      <h2>What Are Cookies</h2>\n      <p>Cookies are small text files stored on your device when you visit a website.</p>\n      <h2>Managing Cookies</h2>\n      <p>You can control or delete cookies through your browser settings. Disabling cookies may affect site features.</p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  },
+  {
+    "slug": "ccpa",
+    "title": "CCPA (California Consumer Privacy Act)",
+    "content": "\n      <p>If you are a California resident, the CCPA may give you certain rights regarding your personal information.</p>\n      <h2>Your Rights</h2>\n      <p>You may have the right to know what personal information we collect, request deletion, and opt-out of the sale of personal information (we do not sell personal information).</p>\n      <h2>How to Exercise Your Rights</h2>\n      <p>To submit a request, please contact us via the <a href=\"/contact\">Contact Us</a> page.</p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  },
+  {
+    "slug": "contact",
+    "title": "Contact Us",
+    "content": "\n      <p>For general inquiries, feedback, or support, please reach out using the information below.</p>\n      <h2>DMCA / Copyright</h2>\n      <p>If you are a rights holder and believe content on this site infringes your copyright, please contact our DMCA agent at:</p>\n      <div style=\"padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.12);background:rgba(255,255,255,0.03);\">\n        <strong>DMCA Contact:</strong><br />\n        Email: <a href=\"mailto:dmca@example.com\">dmca@example.com</a>\n      </div>\n      <p><em>Replace dmca@example.com with your real DMCA email before production.</em></p>\n      <h2>General Contact</h2>\n      <p>Email: <a href=\"mailto:contact@example.com\">contact@example.com</a></p>\n    ",
+    "createdAt": "2026-02-23T19:30:57.293Z",
+    "updatedAt": "2026-02-23T19:30:57.293Z"
+  }
+]

@@ -1,6 +1,6 @@
 import jwt from "jsonwebtoken";
 import { NextRequest } from "next/server";
-import User from "@/lib/models/User";
+import { findUserById } from "@/lib/data/users";
 
 const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-change-me";
 
@@ -33,7 +33,6 @@ export async function getAdminFromRequest(req: NextRequest) {
   if (!token) return null;
   const payload = verifyToken(token);
   if (!payload || payload.role !== "admin") return null;
-  await import("@/lib/db").then((m) => m.default());
-  const user = await User.findById(payload.userId);
+  const user = await findUserById(payload.userId);
   return user;
 }

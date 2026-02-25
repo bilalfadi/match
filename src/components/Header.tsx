@@ -8,7 +8,6 @@ const navLinks = [
   { href: "/premier-league", label: "Premier League" },
   { href: "/football", label: "Football" },
   { href: "/news", label: "News" },
-  { href: "/schedule", label: "Schedule" },
 ];
 
 export default function Header() {
@@ -32,12 +31,6 @@ export default function Header() {
               {link.label}
             </Link>
           ))}
-          <Link
-            href="/admin"
-            className="text-sm font-medium text-gray-400 hover:text-primary"
-          >
-            Admin
-          </Link>
         </nav>
 
         <button
@@ -69,13 +62,6 @@ export default function Header() {
                 {link.label}
               </Link>
             ))}
-            <Link
-              href="/admin"
-              className="py-2 text-gray-400 hover:text-primary"
-              onClick={() => setMobileOpen(false)}
-            >
-              Admin
-            </Link>
           </div>
         </div>
       )}

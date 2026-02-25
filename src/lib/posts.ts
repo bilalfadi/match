@@ -1,19 +1,18 @@
-import dbConnect from "@/lib/db";
-import Post from "@/lib/models/Post";
-import type { PostCategory } from "@/lib/models/Post";
+import type { PostCategory } from "@/lib/data/posts";
+import { findPosts } from "@/lib/data/posts";
 
 export async function getLatestPostsByCategory(
   category: PostCategory,
   limit: number = 6
 ) {
-  await dbConnect();
-  const posts = await Post.find({ category })
-    .sort({ createdAt: -1 })
-    .limit(limit)
-    .lean();
-  return posts.map((p) => ({
-    ...p,
-    id: p._id?.toString(),
-    createdAt: p.createdAt?.toISOString?.(),
-  }));
+  try {
+    const { posts } = await findPosts({ category, page: 1, limit });
+    return posts.map((p) => ({
+      ...p,
+      id: p._id,
+      createdAt: p.createdAt,
+    }));
+  } catch {
+    return [];
+  }
 }

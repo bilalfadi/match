@@ -1,0 +1,18 @@
+[
+  {
+    "_id": "mlzsem9qgh0wa8lrj5j",
+    "homeTeam": "Everton",
+    "awayTeam": "Manchester United",
+    "homeLogo": "https://ui-avatars.com/api/?name=E&size=64&background=1a1a1a&color=888",
+    "awayLogo": "https://ui-avatars.com/api/?name=M&size=64&background=1a1a1a&color=888",
+    "status": "LIVE",
+    "streamUrl": "https://givemereddit.zip/soccer/manutd.html",
+    "sourceDetailUrl": "https://streameast.gl/soccer/740856/everton-vs-man-united",
+    "matchTime": "2026-02-23T23:07:46.619Z",
+    "homeScore": 0,
+    "awayScore": 0,
+    "source": "manual",
+    "createdAt": "2026-02-23T23:07:46.622Z",
+    "updatedAt": "2026-02-23T23:07:46.622Z"
+  }
+]

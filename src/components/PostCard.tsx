@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 import Image from "next/image";
 
@@ -29,7 +31,7 @@ export default function PostCard({
 
   return (
     <article className="glass-card group">
-      <Link href={`/post/${slug}`} className="block">
+      <Link href={`/${slug}`} className="block">
         <div className="relative aspect-video overflow-hidden rounded-lg mb-4 bg-dark-card">
           <Image
             src={image || "/placeholder-post.jpg"}
