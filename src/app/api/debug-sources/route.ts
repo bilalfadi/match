@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { fetchStreameastGlMatches } from "@/lib/sources/fetchStreameastGl";
+
+export const dynamic = "force-dynamic";
 import { fetchXstreameastMatches } from "@/lib/sources/fetchXstreameast";
 import { fetchLivekoraMatches } from "@/lib/sources/fetchLivekora";
 import { fetchLiveMatchesWithEmbed } from "@/lib/sources";
@@ -94,14 +96,14 @@ export async function GET() {
     result.xstreameast.withEmbedCount = withEmbedBySource.xstreameast;
     result.livekora.withEmbedCount = withEmbedBySource.livekora;
 
-    function reason(s: SourceStatus): string | undefined {
+    const reason = (s: SourceStatus): string | undefined => {
       if (s.error) return s.error;
       if (s.listingCount === 0) return "Listing fetch se koi match nahi mila (page structure change ya block).";
       if (s.liveCount === 0) return "Listing mili lekin koi LIVE match nahi.";
       if (s.withEmbedCount === 0)
         return "LIVE mila lekin detail page se valid embed URL nahi nikla (homepage/listing reject).";
       return undefined;
-    }
+    };
 
     return NextResponse.json({
       summary: {

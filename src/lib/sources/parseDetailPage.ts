@@ -22,8 +22,8 @@ function teamsFromTitle(title: string): { home: string; away: string } | null {
   const t = (title || "").trim();
   const vsMatch = t.match(/(.+?)\s+vs\.?\s+(.+?)(?:\s+[-–|]|\s+Live|$)/i) || t.match(/(.+?)\s+vs\.?\s+(.+)/i);
   if (vsMatch) {
-    let home = vsMatch[1].trim();
-    let away = vsMatch[2].trim().replace(/\s+Live\s+stream.*$/i, "").replace(/\s+Live\s*$/i, "").trim();
+    const home = vsMatch[1].trim();
+    const away = vsMatch[2].trim().replace(/\s+Live\s+stream.*$/i, "").replace(/\s+Live\s*$/i, "").trim();
     if (home && away) return { home, away };
   }
   return null;

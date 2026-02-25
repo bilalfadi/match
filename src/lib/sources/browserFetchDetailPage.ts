@@ -142,7 +142,7 @@ export async function browserFetchEmbedUrl(
 
     const pageContent = await page.content();
     const scriptUrls = extractStreamUrlsFromRawHtml(pageContent);
-    const allCandidates = [...new Set([...networkUrls, ...iframeSrcs, ...scriptUrls])];
+    const allCandidates = Array.from(new Set([...networkUrls, ...iframeSrcs, ...scriptUrls]));
     const result = pickFirstValidEmbed(allCandidates, detailUrl);
     await browser.close();
     browser = null;

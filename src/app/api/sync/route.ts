@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { runSync } from "@/lib/sync";
 
+export const dynamic = "force-dynamic";
+
 /** GET: run sync from SYNC_SOURCE_URL and update matches (sync-sourced only). */
 export async function GET() {
   const result = await runSync();
