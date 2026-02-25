@@ -5,10 +5,13 @@
  */
 import * as cheerio from "cheerio";
 
-const INDEX_URLS = [
+// Run with: node scripts/debug-index-links.mjs   (or pass URL: node scripts/debug-index-links.mjs "https://...")
+const DEFAULT_URLS = [
+  "https://totalsportek.army/game/juventus-vs-galatasaray/62639/",
   "https://sportsurge100.is/Juventus-vs-Galatasaray/62639",
   "https://streameast100.is/Juventus-vs-Galatasaray/62639",
 ];
+const INDEX_URLS = process.argv[2] ? [process.argv[2]] : DEFAULT_URLS;
 
 async function fetchHtml(url) {
   const res = await fetch(url, {

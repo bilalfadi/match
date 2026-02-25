@@ -11,7 +11,7 @@ define('FOOTBALL_LIVE_CORE_VERSION', '0.1.0');
 
 // Base URL for external API (Next.js scraper) used to fetch embeds from an index URL.
 if (!defined('FOOTBALL_LIVE_API_BASE')) {
-  define('FOOTBALL_LIVE_API_BASE', 'http://localhost:3000');
+  define('FOOTBALL_LIVE_API_BASE', 'https://match-roan-ten.vercel.app');
 }
 
 // Plugin activation: create core categories/pages + sample posts + flush permalinks
@@ -684,9 +684,11 @@ function flc_save_match_meta($post_id) {
           $data = json_decode($body, true);
           if (is_array($data) && !empty($data['ok']) && !empty($data['embeds']) && is_array($data['embeds'])) {
             $embeds = $data['embeds'];
-            // Clear previous stream URLs
+            // Clear previous stream URLs, labels, languages
             $stream_keys = array('_fl_stream_url', '_fl_stream_url_2', '_fl_stream_url_3', '_fl_stream_url_4');
-            foreach ($stream_keys as $k) {
+            $label_keys = array('_fl_stream_label', '_fl_stream_label_2', '_fl_stream_label_3', '_fl_stream_label_4');
+            $lang_keys  = array('_fl_stream_language', '_fl_stream_language_2', '_fl_stream_language_3', '_fl_stream_language_4');
+            foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
               update_post_meta($post_id, $k, '');
             }
             // Fill up to 4 embeds
@@ -694,8 +696,13 @@ function flc_save_match_meta($post_id) {
             foreach ($embeds as $embed_item) {
               if ($i >= count($stream_keys)) break;
               if (empty($embed_item['embedUrl'])) continue;
-              $key = $stream_keys[$i];
-              update_post_meta($post_id, $key, esc_url_raw($embed_item['embedUrl']));
+              update_post_meta($post_id, $stream_keys[$i], esc_url_raw($embed_item['embedUrl']));
+              if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
+                update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
+              }
+              if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
+                update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
+              }
               // Use first embed to set match + league data
               if ($i === 0) {
                 if (!empty($embed_item['matchTitle']) && is_string($embed_item['matchTitle'])) {

@@ -7,18 +7,19 @@ while (have_posts()) : the_post();
   $home = get_post_meta($post_id, '_fl_home_team', true);
   $away = get_post_meta($post_id, '_fl_away_team', true);
 
-  // Collect up to 4 stream URLs + labels (Link 1..4) from meta.
+  // Collect up to 4 stream URLs + button labels (Server N - Language) from meta.
   $streams = array();
   $labels  = array();
   for ($i = 1; $i <= 4; $i++) {
     $meta_key = ($i === 1) ? '_fl_stream_url' : '_fl_stream_url_' . $i;
-    $label_key = ($i === 1) ? '_fl_stream_label' : '_fl_stream_label_' . $i;
+    $lang_key = ($i === 1) ? '_fl_stream_language' : '_fl_stream_language_' . $i;
     $url = trim((string) get_post_meta($post_id, $meta_key, true));
     if ($url === '') continue;
     $streams[] = $url;
-    $label = trim((string) get_post_meta($post_id, $label_key, true));
-    if ($label === '') {
-      $label = 'Link ' . $i;
+    $language = trim((string) get_post_meta($post_id, $lang_key, true));
+    $label = 'Server ' . $i;
+    if ($language !== '') {
+      $label .= ' - ' . ucfirst($language);
     }
     $labels[] = $label;
   }

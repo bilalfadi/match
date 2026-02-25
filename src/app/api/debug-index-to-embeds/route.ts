@@ -1,6 +1,9 @@
 import * as cheerio from "cheerio";
 import { safeFetch } from "@/lib/sources/safeFetch";
-import { parseStreamIframeFromHtml } from "@/lib/sources/parseStreamIframeFromHtml";
+import {
+  parseStreamIframeFromHtml,
+  isInvalidEmbedUrl,
+} from "@/lib/sources/parseStreamIframeFromHtml";
 
 type LinkResult = {
   label: string;
@@ -191,6 +194,23 @@ export async function POST(req: Request) {
 
         const resolved = parseStreamIframeFromHtml(detailHtml, detailUrl);
         embedUrl = resolved ?? null;
+
+        // Fallback: use detail page URL as embed when no iframe found (JS-rendered pages)
+        if (!embedUrl && !isInvalidEmbedUrl(detailUrl)) {
+          try {
+            const u = new URL(detailUrl);
+            const path = (u.pathname || "/").toLowerCase();
+            if (
+              path !== "/" &&
+              path !== "" &&
+              !/^\/(news|article|blog|register|login|signup|rules)/i.test(path)
+            ) {
+              embedUrl = detailUrl;
+            }
+          } catch {
+            // ignore
+          }
+        }
 
         // Hard filter obviously non-stream / nav embeds:
         // - Same host as index page (e.g. StreamsPortal register/login pages)

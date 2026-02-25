@@ -1,6 +1,9 @@
 import * as cheerio from "cheerio";
 import { safeFetch } from "@/lib/sources/safeFetch";
-import { parseStreamIframeFromHtml } from "@/lib/sources/parseStreamIframeFromHtml";
+import {
+  parseStreamIframeFromHtml,
+  isInvalidEmbedUrl,
+} from "@/lib/sources/parseStreamIframeFromHtml";
 
 type EmbedItem = {
   label: string;
@@ -8,7 +11,27 @@ type EmbedItem = {
   embedUrl: string;
   matchTitle: string | null;
   leagueName: string | null;
+  language: string | null;
 };
+
+const LANGUAGE_WORDS = /(english|german|italian|turkish|spanish|french|portuguese|arabic)\b/i;
+function parseLanguageFromText(text: string): string | null {
+  const m = text.match(LANGUAGE_WORDS);
+  return m ? m[1].toLowerCase() : null;
+}
+
+/** Parse ads count from row (Ads column usually has 1, 2, or 3). Lower = higher priority. */
+function parseAdsFromRow($: ReturnType<typeof cheerio.load>, row: cheerio.Cheerio<cheerio.Element>): number {
+  let ads = 99;
+  row.find("td").each((_, td) => {
+    const t = $(td).text().trim();
+    if (t === "1" || t === "2" || t === "3") {
+      ads = parseInt(t, 10);
+      return false; // break
+    }
+  });
+  return ads;
+}
 
 type ApiResponse =
   | { ok: true; indexUrl: string; embeds: EmbedItem[] }
@@ -42,7 +65,8 @@ export async function POST(req: Request) {
       indexHost = "";
     }
 
-    const linkMap = new Map<string, string>(); // detailUrl -> label
+    type LinkInfo = { label: string; language: string | null; ads: number };
+    const linkMap = new Map<string, LinkInfo>(); // detailUrl -> { label, language, ads }
 
     // Sportsurge/Streameast: real stream URLs are in hidden inputs id="linkk123" (value=URL)
     $('input[type="hidden"][id^="linkk"]').each((_, el) => {
@@ -62,11 +86,23 @@ export async function POST(req: Request) {
       }
       const row = $(el).closest("tr");
       let label = "Stream";
+      let language: string | null = null;
+      let ads = 99;
       if (row.length) {
-        const firstCell = row.find("td").first().text().trim().replace(/\s+/g, " ");
+        const tds = row.find("td");
+        const firstCell = tds.first().text().trim().replace(/\s+/g, " ");
         if (firstCell) label = firstCell;
+        tds.each((i, td) => {
+          const cellText = $(td).text().trim().toLowerCase();
+          if (LANGUAGE_WORDS.test(cellText)) {
+            const m = cellText.match(LANGUAGE_WORDS);
+            if (m) language = m[1].toLowerCase();
+            return false;
+          }
+        });
+        ads = parseAdsFromRow($, row);
       }
-      if (!linkMap.has(full)) linkMap.set(full, label);
+      if (!linkMap.has(full)) linkMap.set(full, { label, language, ads });
     });
 
     $("a[href]").each((_, el) => {
@@ -113,36 +149,47 @@ export async function POST(req: Request) {
       if (!looksLikeWatch && !inTableRow) return;
       if (!looksLikeWatch && inTableRow && (lowerText.length < 2 || /^[\d\s\-]+$/.test(lowerText))) return;
 
-      // Try to extract a provider/label from same table row or surrounding cell
+      // Try to extract a provider/label and language from same table row
       let label = text;
-      if (!label || label.length < 3) {
-        const row = $(el).closest("tr");
-        if (row.length) {
-          const firstCellText = row
-            .find("td")
-            .first()
-            .text()
-            .trim()
-            .replace(/\s+/g, " ");
-          if (firstCellText) {
-            label = firstCellText;
-          }
+      let language: string | null = parseLanguageFromText(lowerText);
+      const row = $(el).closest("tr");
+      if (row.length) {
+        const firstCellText = row
+          .find("td")
+          .first()
+          .text()
+          .trim()
+          .replace(/\s+/g, " ");
+        if (firstCellText && (!label || label.length < 3)) label = firstCellText;
+        if (!language) {
+          row.find("td").each((_, td) => {
+            const cellText = $(td).text().trim();
+            const parsed = parseLanguageFromText(cellText);
+            if (parsed) {
+              language = parsed;
+              return false;
+            }
+          });
         }
       }
-      if (!label) {
-        label = full;
-      }
+      if (!label) label = full;
+      if (!language) language = parseLanguageFromText(label);
+      let ads = 99;
+      if (row.length) ads = parseAdsFromRow($, row);
 
       if (!linkMap.has(full)) {
-        linkMap.set(full, label);
+        linkMap.set(full, { label, language, ads });
       }
     });
 
-    const detailEntries = Array.from(linkMap.entries()).slice(0, 40); // cap to 40 for safety
+    // Prefer links with 1 ad, then 2, then 3 (working sites often show "1" in Ads column)
+    const detailEntries = Array.from(linkMap.entries())
+      .sort((a, b) => a[1].ads - b[1].ads)
+      .slice(0, 40);
 
     const allEmbeds: EmbedItem[] = [];
 
-    for (const [detailUrl, label] of detailEntries) {
+    for (const [detailUrl, { label, language }] of detailEntries) {
       try {
         const detailHtml = await safeFetch(detailUrl);
         const $detail = cheerio.load(detailHtml);
@@ -187,6 +234,24 @@ export async function POST(req: Request) {
 
         let embedUrl = parseStreamIframeFromHtml(detailHtml, detailUrl) ?? null;
 
+        // Fallback: Sportsurge/Streameast detail pages (e.g. totalsportek777) often load iframe via JS.
+        // Use the detail page URL as embed so the iframe loads that page; many work as full-page player.
+        if (!embedUrl && !isInvalidEmbedUrl(detailUrl)) {
+          try {
+            const u = new URL(detailUrl);
+            const path = (u.pathname || "/").toLowerCase();
+            if (
+              path !== "/" &&
+              path !== "" &&
+              !/^\/(news|article|blog|register|login|signup|rules)/i.test(path)
+            ) {
+              embedUrl = detailUrl;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
         // Hard filter obviously non-stream / nav embeds:
         if (embedUrl && indexHost) {
           try {
@@ -228,6 +293,7 @@ export async function POST(req: Request) {
           embedUrl,
           matchTitle,
           leagueName,
+          language: language ?? null,
         });
       } catch {
         // ignore failures for this detailUrl
