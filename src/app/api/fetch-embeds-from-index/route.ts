@@ -1,9 +1,6 @@
 import * as cheerio from "cheerio";
 import { safeFetch } from "@/lib/sources/safeFetch";
-import {
-  parseStreamIframeFromHtml,
-  isInvalidEmbedUrl,
-} from "@/lib/sources/parseStreamIframeFromHtml";
+import { parseStreamIframeFromHtml } from "@/lib/sources/parseStreamIframeFromHtml";
 
 type EmbedItem = {
   label: string;
