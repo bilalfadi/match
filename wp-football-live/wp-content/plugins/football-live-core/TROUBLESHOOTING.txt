@@ -1,0 +1,20 @@
+FOOTBALL LIVE CORE - TROUBLESHOOTING
+====================================
+
+If you see "There has been a critical error on this website":
+
+1) GET THE SITE BACK (disable plugin)
+   - Via FTP/File Manager: rename this folder from "football-live-core" to "football-live-core-off".
+   - Or in database (phpMyAdmin): wp_options → option_name "active_plugins" → edit and remove the line that contains "football-live-core/football-live-core.php".
+
+2) SEE THE EXACT ERROR (then fix and re-enable)
+   - In your WordPress root, edit wp-config.php (before "That's all, stop editing!").
+   - Add or set these lines:
+     define('WP_DEBUG', true);
+     define('WP_DEBUG_LOG', true);
+     define('WP_DEBUG_DISPLAY', false);
+   - Save and reload the site (with plugin enabled). The error message will be written to: wp-content/debug.log
+   - Open debug.log and copy the last PHP Fatal/Error line (file path + line number). Use that to fix the plugin or share with support.
+
+3) RE-ENABLE PLUGIN
+   - Rename folder back to "football-live-core" (or add the plugin back in active_plugins in the database).

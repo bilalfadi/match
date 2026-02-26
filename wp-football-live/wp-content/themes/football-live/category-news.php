@@ -2,7 +2,7 @@
 if (!defined('ABSPATH')) { exit; }
 get_header();
 $hero_bg = 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?w=1920&q=80';
-$paged = max(1, get_query_var('paged'));
+$paged = max(1, (int) get_query_var('paged'));
 ?>
 <section class="hero">
   <div class="hero-bg" style="background-image:url('<?php echo esc_url($hero_bg); ?>')"></div>

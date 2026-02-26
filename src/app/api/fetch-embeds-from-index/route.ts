@@ -253,23 +253,18 @@ export async function POST(req: Request) {
 
         let embedUrl = parseStreamIframeFromHtml(detailHtml, detailUrl) ?? null;
 
-        // Fallback: Sportsurge/Streameast detail pages (e.g. totalsportek777) often load iframe via JS.
-        // Use the detail page URL as embed so the iframe loads that page; many work as full-page player.
-        if (!embedUrl && !isInvalidEmbedUrl(detailUrl)) {
-          try {
-            const u = new URL(detailUrl);
-            const path = (u.pathname || "/").toLowerCase();
-            if (
-              path !== "/" &&
-              path !== "" &&
-              !/^\/(news|article|blog|register|login|signup|rules)/i.test(path)
-            ) {
-              embedUrl = detailUrl;
-            }
-          } catch {
-            // ignore
-          }
+        // Only use real embed/iframe URLs – never use detail page URL as embed (would show full site in iframe).
+        if (!embedUrl) continue;
+
+        // Embed must be from a different domain than the detail page (e.g. TOPHDSTREAMS, ropezara – reject same-site URLs).
+        try {
+          const embedHost = new URL(embedUrl).hostname.toLowerCase();
+          const detailHost = new URL(detailUrl).hostname.toLowerCase();
+          if (embedHost === detailHost) embedUrl = null;
+        } catch {
+          embedUrl = null;
         }
+        if (!embedUrl) continue;
 
         // Hard filter obviously non-stream / nav embeds:
         if (embedUrl && indexHost) {

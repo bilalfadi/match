@@ -155,7 +155,9 @@ function flc_enqueue_page_stream_script($hook) {
     document.addEventListener('DOMContentLoaded', function() {
       var btn = document.getElementById('flc-fetch-page-streams-btn');
       var resultEl = document.getElementById('flc-fetch-page-result');
-      if (!btn || !resultEl) return;
+      if (!resultEl || !btn) return;
+      var nonce = '" . wp_create_nonce('flc_fetch_page_streams') . "';
+      var ajaxUrl = '" . esc_js(admin_url('admin-ajax.php')) . "';
       btn.addEventListener('click', function() {
         var indexUrl = (document.querySelector('input[name=\"fl_index_url\"]') || {}).value || '';
         var detailUrl = (document.querySelector('input[name=\"fl_detail_url\"]') || {}).value || '';
@@ -174,27 +176,39 @@ function flc_enqueue_page_stream_script($hook) {
           btn.disabled = false;
           return;
         }
-        var fd = new FormData();
-        fd.append('action', 'flc_fetch_page_streams');
-        fd.append('nonce', '" . wp_create_nonce('flc_fetch_page_streams') . "');
-        fd.append('post_id', postId);
-        fd.append('fl_index_url', indexUrl);
-        fd.append('fl_detail_url', detailUrl);
-        fetch('" . esc_js(admin_url('admin-ajax.php')) . "', { method: 'POST', body: fd, credentials: 'same-origin' })
-          .then(function(r) { return r.json(); })
+        var params = 'action=flc_fetch_page_streams&nonce=' + encodeURIComponent(nonce) + '&post_id=' + encodeURIComponent(postId) + '&fl_index_url=' + encodeURIComponent(indexUrl) + '&fl_detail_url=' + encodeURIComponent(detailUrl);
+        fetch(ajaxUrl, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params, credentials: 'same-origin' })
+          .then(function(r) {
+            if (!r.ok) {
+              return r.text().then(function(t) {
+                throw new Error('HTTP ' + r.status + (t ? ': ' + t.substring(0, 80) : ''));
+              });
+            }
+            return r.json();
+          })
           .then(function(data) {
             btn.disabled = false;
             if (data && data.success && data.data) {
-              resultEl.textContent = 'Saved ' + (data.data.saved || 0) + ' stream(s). Refresh the page to see the player.';
-              resultEl.style.color = '#00a32a';
+              var saved = data.data.saved || 0;
+              var err = data.data.error || '';
+              if (saved > 0) {
+                resultEl.textContent = 'Saved ' + saved + ' stream(s). Refresh the page to see the player.';
+                resultEl.style.color = '#00a32a';
+              } else if (err) {
+                resultEl.textContent = err;
+                resultEl.style.color = '#b32d2e';
+              } else {
+                resultEl.textContent = 'No streams found. Try another index URL.';
+                resultEl.style.color = '#b32d2e';
+              }
             } else {
-              resultEl.textContent = (data && data.data && data.data.error) ? data.data.error : (data && data.message) || 'Fetch failed.';
+              resultEl.textContent = (data && data.data && data.data.error) ? data.data.error : (data && data.message) || 'Fetch failed (no data).';
               resultEl.style.color = '#b32d2e';
             }
           })
-          .catch(function() {
+          .catch(function(err) {
             btn.disabled = false;
-            resultEl.textContent = 'Network error.';
+            resultEl.textContent = (err && err.message) ? err.message : 'Network error.';
             resultEl.style.color = '#b32d2e';
           });
       });
@@ -493,7 +507,7 @@ function flc_render_page_stream_metabox($post) {
     <span id="flc-fetch-page-result" style="margin-left:8px;font-size:12px;color:#666;"></span>
   </p>
   <p style="font-size:12px;color:#666;">
-    If you use the block editor, &quot;Update&quot; does not send this form. Paste the index URL above and click <strong>Fetch streams now</strong> to load streams.
+    Paste the index URL above and click <strong>Fetch streams now</strong> to load streams (or save the page with &quot;Try to fetch on save&quot; checked).
   </p>
   <?php
 }
@@ -683,6 +697,16 @@ function flc_populate_detail_urls_from_index($post_id, $index_url, $html) {
   }
 }
 
+function flc_save_match_meta_wrapper($post_id) {
+  try {
+    flc_save_match_meta($post_id);
+  } catch (Throwable $e) {
+    if (defined('WP_DEBUG') && WP_DEBUG && function_exists('error_log')) {
+      error_log('Football Live Core (match save): ' . $e->getMessage());
+    }
+  }
+}
+
 function flc_save_match_meta($post_id) {
   if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
   if (!isset($_POST['flc_match_meta_nonce']) || !wp_verify_nonce($_POST['flc_match_meta_nonce'], 'flc_match_meta_save')) return;
@@ -754,11 +778,19 @@ function flc_save_match_meta($post_id) {
 
   $do_fetch = isset($_POST['fl_fetch_on_save']) && ($detail || $index);
   if ($do_fetch) {
+    $lock_key = 'flc_fetch_match_' . $post_id;
+    if (get_transient($lock_key)) {
+      $do_fetch = false;
+    } else {
+      set_transient($lock_key, 1, 30);
+    }
+  }
+  if ($do_fetch) {
     // First try external API (Next.js) using the main index URL to get up to 4 working embed URLs.
     if ($index && defined('FOOTBALL_LIVE_API_BASE')) {
       $api_url = trailingslashit(FOOTBALL_LIVE_API_BASE) . 'api/fetch-embeds-from-index';
       $resp = wp_remote_post($api_url, array(
-        'timeout' => 25,
+        'timeout' => 60,
         'headers' => array('Content-Type' => 'application/json'),
         'body'    => wp_json_encode(array('indexUrl' => $index)),
       ));
@@ -787,6 +819,24 @@ function flc_save_match_meta($post_id) {
             foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
               update_post_meta($post_id, $k, '');
             }
+            // Set home/away and league from first embed that has matchTitle (API returns it from detail page title)
+            $name_source = array_merge($working_embeds, $embeds);
+            foreach ($name_source as $e) {
+              if (!empty($e['matchTitle']) && is_string($e['matchTitle']) && strpos($e['matchTitle'], ' vs ') !== false) {
+                $parts = explode(' vs ', $e['matchTitle'], 2);
+                if (count($parts) === 2 && trim($parts[0]) !== '' && trim($parts[1]) !== '') {
+                  update_post_meta($post_id, '_fl_home_team', sanitize_text_field(trim($parts[0])));
+                  update_post_meta($post_id, '_fl_away_team', sanitize_text_field(trim($parts[1])));
+                  break;
+                }
+              }
+            }
+            foreach ($name_source as $e) {
+              if (!empty($e['leagueName']) && is_string($e['leagueName'])) {
+                update_post_meta($post_id, '_fl_league_name', sanitize_text_field($e['leagueName']));
+                break;
+              }
+            }
             $i = 0;
             foreach ($working_embeds as $embed_item) {
               if ($i >= count($stream_keys)) break;
@@ -798,18 +848,6 @@ function flc_save_match_meta($post_id) {
               }
               if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
                 update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
-              }
-              if ($i === 0) {
-                if (!empty($embed_item['matchTitle']) && is_string($embed_item['matchTitle'])) {
-                  $parts = explode(' vs ', $embed_item['matchTitle']);
-                  if (count($parts) === 2) {
-                    update_post_meta($post_id, '_fl_home_team', sanitize_text_field($parts[0]));
-                    update_post_meta($post_id, '_fl_away_team', sanitize_text_field($parts[1]));
-                  }
-                }
-                if (!empty($embed_item['leagueName']) && is_string($embed_item['leagueName'])) {
-                  update_post_meta($post_id, '_fl_league_name', sanitize_text_field($embed_item['leagueName']));
-                }
               }
               $i++;
             }
@@ -899,23 +937,37 @@ function flc_save_match_meta($post_id) {
     $final_stream = trim((string)get_post_meta($post_id, '_fl_stream_url', true));
     if ($final_stream === '') {
       // move to draft
-      remove_action('save_post_match', 'flc_save_match_meta');
-      wp_update_post(array('ID' => $post_id, 'post_status' => 'draft'));
-      add_action('save_post_match', 'flc_save_match_meta');
+remove_action('save_post_match', 'flc_save_match_meta_wrapper');
+        wp_update_post(array('ID' => $post_id, 'post_status' => 'draft'));
+        add_action('save_post_match', 'flc_save_match_meta_wrapper');
     } else {
       // Set title if empty
       $final_home = get_post_meta($post_id, '_fl_home_team', true);
       $final_away = get_post_meta($post_id, '_fl_away_team', true);
       $wanted_title = trim($final_home . ' vs ' . $final_away);
       if ($wanted_title && get_the_title($post_id) !== $wanted_title) {
-        remove_action('save_post_match', 'flc_save_match_meta');
+        remove_action('save_post_match', 'flc_save_match_meta_wrapper');
         wp_update_post(array('ID' => $post_id, 'post_title' => $wanted_title));
-        add_action('save_post_match', 'flc_save_match_meta');
+        add_action('save_post_match', 'flc_save_match_meta_wrapper');
       }
     }
   }
+  if ($do_fetch) {
+    delete_transient('flc_fetch_match_' . $post_id);
+  }
+}
 
 // Save handler for page stream meta (only handles stream URLs, no teams/league logic)
+function flc_save_page_stream_meta_wrapper($post_id) {
+  try {
+    flc_save_page_stream_meta($post_id);
+  } catch (Throwable $e) {
+    if (defined('WP_DEBUG') && WP_DEBUG && function_exists('error_log')) {
+      error_log('Football Live Core (page save): ' . $e->getMessage());
+    }
+  }
+}
+
 function flc_save_page_stream_meta($post_id) {
   if (defined('DOING_AUTOSAVE') && DOING_AUTOSAVE) return;
   if (!isset($_POST['flc_page_stream_meta_nonce']) || !wp_verify_nonce($_POST['flc_page_stream_meta_nonce'], 'flc_page_stream_meta_save')) return;
@@ -948,7 +1000,7 @@ function flc_save_page_stream_meta($post_id) {
     if ($index && defined('FOOTBALL_LIVE_API_BASE')) {
       $api_url = trailingslashit(FOOTBALL_LIVE_API_BASE) . 'api/fetch-embeds-from-index';
       $resp = wp_remote_post($api_url, array(
-        'timeout' => 25,
+        'timeout' => 60,
         'headers' => array('Content-Type' => 'application/json'),
         'body'    => wp_json_encode(array('indexUrl' => $index)),
       ));
@@ -992,6 +1044,7 @@ function flc_save_page_stream_meta($post_id) {
             }
             $primary_stream = trim((string) get_post_meta($post_id, '_fl_stream_url', true));
             if ($primary_stream !== '') {
+              delete_transient('flc_fetch_match_' . $post_id);
               return;
             }
           }
@@ -1058,11 +1111,12 @@ function flc_save_page_stream_meta($post_id) {
     }
   }
 }
-add_action('save_post_page', 'flc_save_page_stream_meta');
 
 // AJAX: Fetch streams for a page (used when block editor doesn't submit the Stream Links form)
 function flc_ajax_fetch_page_streams() {
-  check_ajax_referer('flc_fetch_page_streams', 'nonce');
+  if (!check_ajax_referer('flc_fetch_page_streams', 'nonce', false)) {
+    wp_send_json_error(array('error' => 'Security check failed. Refresh the page and try again.'));
+  }
   $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
   if (!$post_id || !current_user_can('edit_post', $post_id)) {
     wp_send_json_error(array('error' => 'Permission denied.'));
@@ -1080,14 +1134,20 @@ function flc_ajax_fetch_page_streams() {
   if (!$index && !$detail) {
     wp_send_json_error(array('error' => 'Enter Main Source URL or Match Page URL first.'));
   }
-  $saved = flc_do_page_stream_fetch($post_id);
-  wp_send_json_success(array('saved' => $saved));
+  try {
+    $result = flc_do_page_stream_fetch($post_id);
+    $saved = isset($result['saved']) ? (int) $result['saved'] : 0;
+    $msg = isset($result['error']) ? trim((string) $result['error']) : '';
+    wp_send_json_success(array('saved' => $saved, 'error' => $msg));
+  } catch (Exception $e) {
+    wp_send_json_error(array('error' => 'Server error: ' . $e->getMessage()));
+  }
 }
 add_action('wp_ajax_flc_fetch_page_streams', 'flc_ajax_fetch_page_streams');
 
 /**
  * Run the stream fetch for a page (API then PHP fallback). Reads index/detail from meta.
- * Returns number of stream URLs saved (0–4).
+ * Returns array( 'saved' => 0–4, 'error' => '' or message ).
  */
 function flc_do_page_stream_fetch($post_id) {
   $index = trim((string) get_post_meta($post_id, '_fl_index_url', true));
@@ -1102,49 +1162,58 @@ function flc_do_page_stream_fetch($post_id) {
   if ($index && defined('FOOTBALL_LIVE_API_BASE')) {
     $api_url = trailingslashit(FOOTBALL_LIVE_API_BASE) . 'api/fetch-embeds-from-index';
     $resp = wp_remote_post($api_url, array(
-      'timeout' => 25,
+      'timeout' => 60,
       'headers' => array('Content-Type' => 'application/json'),
       'body'    => wp_json_encode(array('indexUrl' => $index)),
     ));
-    if (!is_wp_error($resp)) {
-      $code = wp_remote_retrieve_response_code($resp);
-      if ($code >= 200 && $code < 300) {
-        $body = wp_remote_retrieve_body($resp);
-        $data = json_decode($body, true);
-        if (is_array($data) && !empty($data['ok']) && !empty($data['embeds']) && is_array($data['embeds'])) {
-          $embeds = $data['embeds'];
-          $working_embeds = array();
-          foreach ($embeds as $embed_item) {
-            if (count($working_embeds) >= 4) break;
-            $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
-            if ($url === '') continue;
-            if (!flc_check_stream_url_alive($url)) continue;
-            $working_embeds[] = $embed_item;
-          }
-          if (count($working_embeds) === 0 && count($embeds) > 0) {
-            $working_embeds = array_slice($embeds, 0, 2);
-          }
-          foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
-            update_post_meta($post_id, $k, '');
-          }
-          $i = 0;
-          foreach ($working_embeds as $embed_item) {
-            if ($i >= count($stream_keys)) break;
-            $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
-            if ($url === '') continue;
-            update_post_meta($post_id, $stream_keys[$i], esc_url_raw($url));
-            if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
-              update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
-            }
-            if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
-              update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
-            }
-            $i++;
-          }
-          return $i;
-        }
-      }
+    if (is_wp_error($resp)) {
+      return array('saved' => 0, 'error' => 'API unreachable: ' . $resp->get_error_message());
     }
+    $code = wp_remote_retrieve_response_code($resp);
+    $body = wp_remote_retrieve_body($resp);
+    if ($code < 200 || $code >= 300) {
+      return array('saved' => 0, 'error' => 'API returned HTTP ' . $code . '. Check FOOTBALL_LIVE_API_BASE in wp-config.');
+    }
+    $data = json_decode($body, true);
+    if (!is_array($data)) {
+      return array('saved' => 0, 'error' => 'API returned invalid JSON.');
+    }
+    if (!empty($data['error'])) {
+      return array('saved' => 0, 'error' => 'API: ' . sanitize_text_field($data['error']));
+    }
+    if (empty($data['ok']) || empty($data['embeds']) || !is_array($data['embeds'])) {
+      return array('saved' => 0, 'error' => 'API returned no streams. Try a different index URL or try again later.');
+    }
+    $embeds = $data['embeds'];
+    $working_embeds = array();
+    foreach ($embeds as $embed_item) {
+      if (count($working_embeds) >= 4) break;
+      $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+      if ($url === '') continue;
+      if (!flc_check_stream_url_alive($url)) continue;
+      $working_embeds[] = $embed_item;
+    }
+    if (count($working_embeds) === 0 && count($embeds) > 0) {
+      $working_embeds = array_slice($embeds, 0, 2);
+    }
+    foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
+      update_post_meta($post_id, $k, '');
+    }
+    $i = 0;
+    foreach ($working_embeds as $embed_item) {
+      if ($i >= count($stream_keys)) break;
+      $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+      if ($url === '') continue;
+      update_post_meta($post_id, $stream_keys[$i], esc_url_raw($url));
+      if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
+        update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
+      }
+      if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
+        update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
+      }
+      $i++;
+    }
+    return array('saved' => $i, 'error' => '');
   }
 
   $index_html = null;
@@ -1182,23 +1251,26 @@ function flc_do_page_stream_fetch($post_id) {
     update_post_meta($post_id, $stream_keys[$filled], $p_stream);
     $filled++;
   }
-  return $filled;
+  return array('saved' => $filled, 'error' => '');
 }
 
 // ----- Stream health checker (runs via WP-Cron every ~30 minutes) -----
 
 function flc_check_stream_url_alive($url) {
-  $url = trim((string) $url);
-  if ($url === '') return false;
-  $resp = wp_remote_head($url, array(
-    'timeout' => 5,
-    'redirection' => 3,
-  ));
-  if (is_wp_error($resp)) return false;
-  $code = wp_remote_retrieve_response_code($resp);
-  // Treat common success/redirect codes as "alive"
-  $ok_codes = array(200, 301, 302, 303, 307, 308);
-  return in_array($code, $ok_codes, true);
+  try {
+    $url = trim((string) $url);
+    if ($url === '') return false;
+    $resp = wp_remote_head($url, array(
+      'timeout' => 5,
+      'redirection' => 3,
+    ));
+    if (is_wp_error($resp)) return false;
+    $code = wp_remote_retrieve_response_code($resp);
+    $ok_codes = array(200, 301, 302, 303, 307, 308);
+    return in_array($code, $ok_codes, true);
+  } catch (Throwable $e) {
+    return false;
+  }
 }
 
 /**
@@ -1218,7 +1290,16 @@ function flc_is_stream_url_alive_cached($url) {
 }
 
 function flc_check_streams() {
-  // Check both matches and pages that have any stream URL meta set
+  try {
+    flc_check_streams_run();
+  } catch (Throwable $e) {
+    if (defined('WP_DEBUG') && WP_DEBUG && function_exists('error_log')) {
+      error_log('Football Live Core (cron check_streams): ' . $e->getMessage());
+    }
+  }
+}
+
+function flc_check_streams_run() {
   $post_types = array('match', 'page');
   $meta_keys  = array(
     '_fl_stream_url',
@@ -1264,8 +1345,8 @@ function flc_check_streams() {
   }
 }
 add_action('flc_check_streams_event', 'flc_check_streams');
-}
-add_action('save_post_match', 'flc_save_match_meta');
+add_action('save_post_match', 'flc_save_match_meta_wrapper');
+add_action('save_post_page', 'flc_save_page_stream_meta_wrapper');
 
 function flc_matches_shortcode($atts) {
   $atts = shortcode_atts(array(
@@ -1291,6 +1372,16 @@ function flc_matches_shortcode($atts) {
     $id = get_the_ID();
     $home = get_post_meta($id, '_fl_home_team', true);
     $away = get_post_meta($id, '_fl_away_team', true);
+    if (($home === '' || $away === '') && function_exists('get_the_title')) {
+      $post_title = get_the_title($id);
+      if ($post_title && strpos($post_title, ' vs ') !== false) {
+        $title_parts = explode(' vs ', $post_title, 2);
+        if (count($title_parts) === 2) {
+          if ($home === '') $home = trim($title_parts[0]);
+          if ($away === '') $away = trim($title_parts[1]);
+        }
+      }
+    }
     $home_logo = get_post_meta($id, '_fl_home_logo', true);
     $away_logo = get_post_meta($id, '_fl_away_logo', true);
     $league_name = get_post_meta($id, '_fl_league_name', true);

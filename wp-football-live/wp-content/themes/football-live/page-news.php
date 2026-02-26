@@ -5,7 +5,7 @@ get_header();
 
 global $post;
 $cat_slug = ($post && $post->post_name) ? strtolower($post->post_name) : 'news';
-$paged = max(1, get_query_var('paged') ?: (isset($_GET['paged']) ? (int) $_GET['paged'] : 1));
+$paged = max(1, (int) (get_query_var('paged') ?: (isset($_GET['paged']) ? (int) $_GET['paged'] : 1)));
 $cat = get_category_by_slug($cat_slug);
 $q = new WP_Query(array(
   'post_type' => 'post',
