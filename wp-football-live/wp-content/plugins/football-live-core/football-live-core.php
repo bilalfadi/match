@@ -144,6 +144,65 @@ function flc_add_page_stream_metabox() {
 }
 add_action('add_meta_boxes_page', 'flc_add_page_stream_metabox');
 
+// Enqueue script for "Fetch streams now" button on page edit screen
+function flc_enqueue_page_stream_script($hook) {
+  if ($hook !== 'post.php' && $hook !== 'post-new.php') return;
+  global $post;
+  if (!$post || $post->post_type !== 'page') return;
+  $url = plugin_dir_url(__FILE__) . 'page-stream-fetch.js';
+  wp_enqueue_script('flc-page-stream-fetch', $url, array(), FOOTBALL_LIVE_CORE_VERSION, true);
+  wp_add_inline_script('flc-page-stream-fetch', "
+    document.addEventListener('DOMContentLoaded', function() {
+      var btn = document.getElementById('flc-fetch-page-streams-btn');
+      var resultEl = document.getElementById('flc-fetch-page-result');
+      if (!btn || !resultEl) return;
+      btn.addEventListener('click', function() {
+        var indexUrl = (document.querySelector('input[name=\"fl_index_url\"]') || {}).value || '';
+        var detailUrl = (document.querySelector('input[name=\"fl_detail_url\"]') || {}).value || '';
+        if (!indexUrl && !detailUrl) {
+          resultEl.textContent = 'Enter Main Source URL or Match Page URL first.';
+          resultEl.style.color = '#b32d2e';
+          return;
+        }
+        resultEl.textContent = 'Fetching…';
+        resultEl.style.color = '#666';
+        btn.disabled = true;
+        var postId = btn.getAttribute('data-post-id') || (document.querySelector('input[name=\"post_ID\"]') && document.querySelector('input[name=\"post_ID\"]').value) || '';
+        if (!postId) {
+          resultEl.textContent = 'Save the page once first, then fetch.';
+          resultEl.style.color = '#b32d2e';
+          btn.disabled = false;
+          return;
+        }
+        var fd = new FormData();
+        fd.append('action', 'flc_fetch_page_streams');
+        fd.append('nonce', '" . wp_create_nonce('flc_fetch_page_streams') . "');
+        fd.append('post_id', postId);
+        fd.append('fl_index_url', indexUrl);
+        fd.append('fl_detail_url', detailUrl);
+        fetch('" . esc_js(admin_url('admin-ajax.php')) . "', { method: 'POST', body: fd, credentials: 'same-origin' })
+          .then(function(r) { return r.json(); })
+          .then(function(data) {
+            btn.disabled = false;
+            if (data && data.success && data.data) {
+              resultEl.textContent = 'Saved ' + (data.data.saved || 0) + ' stream(s). Refresh the page to see the player.';
+              resultEl.style.color = '#00a32a';
+            } else {
+              resultEl.textContent = (data && data.data && data.data.error) ? data.data.error : (data && data.message) || 'Fetch failed.';
+              resultEl.style.color = '#b32d2e';
+            }
+          })
+          .catch(function() {
+            btn.disabled = false;
+            resultEl.textContent = 'Network error.';
+            resultEl.style.color = '#b32d2e';
+          });
+      });
+    });
+  ");
+}
+add_action('admin_enqueue_scripts', 'flc_enqueue_page_stream_script');
+
 function flc_render_match_metabox($post) {
   wp_nonce_field('flc_match_meta_save', 'flc_match_meta_nonce');
   $fields = array(
@@ -301,6 +360,16 @@ function flc_render_match_metabox($post) {
       <input style="width:100%" type="datetime-local" name="fl_stream_ends_at" value="<?php echo esc_attr($ends_at_val); ?>" />
       <span style="display:block;color:#666;font-size:12px;margin-top:2px;">After this date/time the stream will be hidden on the match page.</span>
     </p>
+    <p><label><strong>Or: hide stream after (from when you save)</strong></label><br>
+      <span style="display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap;">
+        <input type="number" name="fl_stream_ends_in_value" value="" min="1" max="999" step="1" placeholder="e.g. 30" style="width:70px;" />
+        <select name="fl_stream_ends_in_unit" style="width:90px;">
+          <option value="minutes">minutes</option>
+          <option value="hours">hours</option>
+        </select>
+      </span>
+      <span style="display:block;color:#666;font-size:12px;margin-top:2px;">User says &quot;stream will end in 30 mins&quot; or &quot;1 hour&quot; – fill here and save; exact end time will be set automatically.</span>
+    </p>
   </div>
 
   <p>
@@ -416,6 +485,15 @@ function flc_render_page_stream_metabox($post) {
       <input type="checkbox" name="fl_page_fetch_on_save" value="1" checked>
       Try to fetch stream URLs from source URLs on save
     </label>
+  </p>
+  <p>
+    <button type="button" class="button button-secondary" id="flc-fetch-page-streams-btn" data-post-id="<?php echo (int) $post->ID; ?>">
+      Fetch streams now
+    </button>
+    <span id="flc-fetch-page-result" style="margin-left:8px;font-size:12px;color:#666;"></span>
+  </p>
+  <p style="font-size:12px;color:#666;">
+    If you use the block editor, &quot;Update&quot; does not send this form. Paste the index URL above and click <strong>Fetch streams now</strong> to load streams.
   </p>
   <?php
 }
@@ -638,6 +716,13 @@ function flc_save_match_meta($post_id) {
   $match_time = isset($_POST['fl_match_time']) ? sanitize_text_field($_POST['fl_match_time']) : '';
   $stream_ends_at_raw = isset($_POST['fl_stream_ends_at']) ? sanitize_text_field($_POST['fl_stream_ends_at']) : '';
   $stream_ends_at = $stream_ends_at_raw ? str_replace('T', ' ', substr($stream_ends_at_raw, 0, 16)) : '';
+  // If user set "ends in X minutes/hours", compute end time from now and use that.
+  $ends_in_value = isset($_POST['fl_stream_ends_in_value']) ? absint($_POST['fl_stream_ends_in_value']) : 0;
+  $ends_in_unit = isset($_POST['fl_stream_ends_in_unit']) && $_POST['fl_stream_ends_in_unit'] === 'hours' ? 'hours' : 'minutes';
+  if ($ends_in_value > 0) {
+    $seconds = $ends_in_unit === 'hours' ? ( $ends_in_value * 3600 ) : ( $ends_in_value * 60 );
+    $stream_ends_at = gmdate('Y-m-d H:i:s', time() + $seconds);
+  }
 
   update_post_meta($post_id, '_fl_index_url', $index);
   update_post_meta($post_id, '_fl_detail_url', $detail);
@@ -684,26 +769,36 @@ function flc_save_match_meta($post_id) {
           $data = json_decode($body, true);
           if (is_array($data) && !empty($data['ok']) && !empty($data['embeds']) && is_array($data['embeds'])) {
             $embeds = $data['embeds'];
-            // Clear previous stream URLs, labels, languages
+            // Only keep embeds whose URL responds (working stream) – then only that many buttons will show.
+            $working_embeds = array();
+            foreach ($embeds as $embed_item) {
+              if (count($working_embeds) >= 4) break;
+              $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+              if ($url === '') continue;
+              if (!flc_check_stream_url_alive($url)) continue;
+              $working_embeds[] = $embed_item;
+            }
+            if (count($working_embeds) === 0 && count($embeds) > 0) {
+              $working_embeds = array_slice($embeds, 0, 2);
+            }
             $stream_keys = array('_fl_stream_url', '_fl_stream_url_2', '_fl_stream_url_3', '_fl_stream_url_4');
             $label_keys = array('_fl_stream_label', '_fl_stream_label_2', '_fl_stream_label_3', '_fl_stream_label_4');
             $lang_keys  = array('_fl_stream_language', '_fl_stream_language_2', '_fl_stream_language_3', '_fl_stream_language_4');
             foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
               update_post_meta($post_id, $k, '');
             }
-            // Fill up to 4 embeds
             $i = 0;
-            foreach ($embeds as $embed_item) {
+            foreach ($working_embeds as $embed_item) {
               if ($i >= count($stream_keys)) break;
-              if (empty($embed_item['embedUrl'])) continue;
-              update_post_meta($post_id, $stream_keys[$i], esc_url_raw($embed_item['embedUrl']));
+              $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+              if ($url === '') continue;
+              update_post_meta($post_id, $stream_keys[$i], esc_url_raw($url));
               if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
                 update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
               }
               if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
                 update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
               }
-              // Use first embed to set match + league data
               if ($i === 0) {
                 if (!empty($embed_item['matchTitle']) && is_string($embed_item['matchTitle'])) {
                   $parts = explode(' vs ', $embed_item['matchTitle']);
@@ -718,7 +813,6 @@ function flc_save_match_meta($post_id) {
               }
               $i++;
             }
-            // If we got at least one working embed from API, skip internal scraping logic.
             $primary_stream = trim((string) get_post_meta($post_id, '_fl_stream_url', true));
             if ($primary_stream !== '') {
               return;
@@ -779,19 +873,18 @@ function flc_save_match_meta($post_id) {
       update_post_meta($post_id, $k, '');
     }
 
-    // Iterate all candidate detail pages, extract embed URL,
-    // and fill up to 4 stream URLs (cron will later clean dead ones).
+    // Iterate all candidate detail pages, extract embed URL; only save if link is working (alive).
     $filled = 0;
     foreach ($candidates as $d_url) {
       if ($filled >= count($stream_keys)) break;
       list($p_home, $p_away, $p_stream, $p_league_name, $p_league_logo) = flc_extract_from_detail_url($d_url);
       $p_stream = trim((string) $p_stream);
       if ($p_stream === '') continue;
+      if (!flc_check_stream_url_alive($p_stream)) continue;
 
       $stream_key = $stream_keys[$filled];
       update_post_meta($post_id, $stream_key, $p_stream);
 
-      // For the first working stream, also update teams + league meta
       if ($filled === 0) {
         if ($p_home) update_post_meta($post_id, '_fl_home_team', $p_home);
         if ($p_away) update_post_meta($post_id, '_fl_away_team', $p_away);
@@ -828,8 +921,9 @@ function flc_save_page_stream_meta($post_id) {
   if (!isset($_POST['flc_page_stream_meta_nonce']) || !wp_verify_nonce($_POST['flc_page_stream_meta_nonce'], 'flc_page_stream_meta_save')) return;
   if (!current_user_can('edit_post', $post_id)) return;
 
+  // Block editor saves via REST and does not send this form – so we only run when nonce is present (classic form submit).
   $index  = isset($_POST['fl_index_url']) ? esc_url_raw(trim($_POST['fl_index_url'])) : '';
-  $detail  = isset($_POST['fl_detail_url']) ? esc_url_raw(trim($_POST['fl_detail_url'])) : '';
+  $detail = isset($_POST['fl_detail_url']) ? esc_url_raw(trim($_POST['fl_detail_url'])) : '';
   $stream  = isset($_POST['fl_stream_url']) ? esc_url_raw(trim($_POST['fl_stream_url'])) : '';
   $detail2 = isset($_POST['fl_detail_url_2']) ? esc_url_raw(trim($_POST['fl_detail_url_2'])) : '';
   $detail3 = isset($_POST['fl_detail_url_3']) ? esc_url_raw(trim($_POST['fl_detail_url_3'])) : '';
@@ -850,7 +944,62 @@ function flc_save_page_stream_meta($post_id) {
 
   $do_fetch = isset($_POST['fl_page_fetch_on_save']) && ($detail || $index);
   if ($do_fetch) {
-    // If we have an index URL, first try to auto-fill detail URL slots from it
+    // First try external API (Next.js) using the index URL – same as Match, so Pages also get working embeds.
+    if ($index && defined('FOOTBALL_LIVE_API_BASE')) {
+      $api_url = trailingslashit(FOOTBALL_LIVE_API_BASE) . 'api/fetch-embeds-from-index';
+      $resp = wp_remote_post($api_url, array(
+        'timeout' => 25,
+        'headers' => array('Content-Type' => 'application/json'),
+        'body'    => wp_json_encode(array('indexUrl' => $index)),
+      ));
+      if (!is_wp_error($resp)) {
+        $code = wp_remote_retrieve_response_code($resp);
+        if ($code >= 200 && $code < 300) {
+          $body = wp_remote_retrieve_body($resp);
+          $data = json_decode($body, true);
+          if (is_array($data) && !empty($data['ok']) && !empty($data['embeds']) && is_array($data['embeds'])) {
+            $embeds = $data['embeds'];
+            $working_embeds = array();
+            foreach ($embeds as $embed_item) {
+              if (count($working_embeds) >= 4) break;
+              $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+              if ($url === '') continue;
+              if (!flc_check_stream_url_alive($url)) continue;
+              $working_embeds[] = $embed_item;
+            }
+            if (count($working_embeds) === 0 && count($embeds) > 0) {
+              $working_embeds = array_slice($embeds, 0, 2);
+            }
+            $stream_keys = array('_fl_stream_url', '_fl_stream_url_2', '_fl_stream_url_3', '_fl_stream_url_4');
+            $label_keys = array('_fl_stream_label', '_fl_stream_label_2', '_fl_stream_label_3', '_fl_stream_label_4');
+            $lang_keys  = array('_fl_stream_language', '_fl_stream_language_2', '_fl_stream_language_3', '_fl_stream_language_4');
+            foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
+              update_post_meta($post_id, $k, '');
+            }
+            $i = 0;
+            foreach ($working_embeds as $embed_item) {
+              if ($i >= count($stream_keys)) break;
+              $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+              if ($url === '') continue;
+              update_post_meta($post_id, $stream_keys[$i], esc_url_raw($url));
+              if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
+                update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
+              }
+              if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
+                update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
+              }
+              $i++;
+            }
+            $primary_stream = trim((string) get_post_meta($post_id, '_fl_stream_url', true));
+            if ($primary_stream !== '') {
+              return;
+            }
+          }
+        }
+      }
+    }
+
+    // Fallback: If we have an index URL, auto-fill detail URL slots from it
     $index_html = null;
     if ($index) {
       $index_html = flc_http_get($index);
@@ -894,14 +1043,14 @@ function flc_save_page_stream_meta($post_id) {
       update_post_meta($post_id, $k, '');
     }
 
-    // Iterate all candidate detail pages, extract embed URL,
-    // and fill up to 4 stream URLs (cron will later clean dead ones).
+    // Only save stream URL if it responds (working); then only that many buttons show on page.
     $filled = 0;
     foreach ($candidates as $d_url) {
       if ($filled >= count($stream_keys)) break;
       list($_ph, $_pa, $p_stream) = flc_extract_from_detail_url($d_url);
       $p_stream = trim((string) $p_stream);
       if ($p_stream === '') continue;
+      if (!flc_check_stream_url_alive($p_stream)) continue;
 
       $stream_key = $stream_keys[$filled];
       update_post_meta($post_id, $stream_key, $p_stream);
@@ -910,6 +1059,131 @@ function flc_save_page_stream_meta($post_id) {
   }
 }
 add_action('save_post_page', 'flc_save_page_stream_meta');
+
+// AJAX: Fetch streams for a page (used when block editor doesn't submit the Stream Links form)
+function flc_ajax_fetch_page_streams() {
+  check_ajax_referer('flc_fetch_page_streams', 'nonce');
+  $post_id = isset($_POST['post_id']) ? absint($_POST['post_id']) : 0;
+  if (!$post_id || !current_user_can('edit_post', $post_id)) {
+    wp_send_json_error(array('error' => 'Permission denied.'));
+  }
+  $index_url = isset($_POST['fl_index_url']) ? esc_url_raw(trim($_POST['fl_index_url'])) : '';
+  $detail_url = isset($_POST['fl_detail_url']) ? esc_url_raw(trim($_POST['fl_detail_url'])) : '';
+  if ($index_url) {
+    update_post_meta($post_id, '_fl_index_url', $index_url);
+  }
+  if ($detail_url) {
+    update_post_meta($post_id, '_fl_detail_url', $detail_url);
+  }
+  $index = $index_url ?: trim((string) get_post_meta($post_id, '_fl_index_url', true));
+  $detail = $detail_url ?: trim((string) get_post_meta($post_id, '_fl_detail_url', true));
+  if (!$index && !$detail) {
+    wp_send_json_error(array('error' => 'Enter Main Source URL or Match Page URL first.'));
+  }
+  $saved = flc_do_page_stream_fetch($post_id);
+  wp_send_json_success(array('saved' => $saved));
+}
+add_action('wp_ajax_flc_fetch_page_streams', 'flc_ajax_fetch_page_streams');
+
+/**
+ * Run the stream fetch for a page (API then PHP fallback). Reads index/detail from meta.
+ * Returns number of stream URLs saved (0–4).
+ */
+function flc_do_page_stream_fetch($post_id) {
+  $index = trim((string) get_post_meta($post_id, '_fl_index_url', true));
+  $detail = trim((string) get_post_meta($post_id, '_fl_detail_url', true));
+  $detail2 = trim((string) get_post_meta($post_id, '_fl_detail_url_2', true));
+  $detail3 = trim((string) get_post_meta($post_id, '_fl_detail_url_3', true));
+  $detail4 = trim((string) get_post_meta($post_id, '_fl_detail_url_4', true));
+  $stream_keys = array('_fl_stream_url', '_fl_stream_url_2', '_fl_stream_url_3', '_fl_stream_url_4');
+  $label_keys = array('_fl_stream_label', '_fl_stream_label_2', '_fl_stream_label_3', '_fl_stream_label_4');
+  $lang_keys  = array('_fl_stream_language', '_fl_stream_language_2', '_fl_stream_language_3', '_fl_stream_language_4');
+
+  if ($index && defined('FOOTBALL_LIVE_API_BASE')) {
+    $api_url = trailingslashit(FOOTBALL_LIVE_API_BASE) . 'api/fetch-embeds-from-index';
+    $resp = wp_remote_post($api_url, array(
+      'timeout' => 25,
+      'headers' => array('Content-Type' => 'application/json'),
+      'body'    => wp_json_encode(array('indexUrl' => $index)),
+    ));
+    if (!is_wp_error($resp)) {
+      $code = wp_remote_retrieve_response_code($resp);
+      if ($code >= 200 && $code < 300) {
+        $body = wp_remote_retrieve_body($resp);
+        $data = json_decode($body, true);
+        if (is_array($data) && !empty($data['ok']) && !empty($data['embeds']) && is_array($data['embeds'])) {
+          $embeds = $data['embeds'];
+          $working_embeds = array();
+          foreach ($embeds as $embed_item) {
+            if (count($working_embeds) >= 4) break;
+            $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+            if ($url === '') continue;
+            if (!flc_check_stream_url_alive($url)) continue;
+            $working_embeds[] = $embed_item;
+          }
+          if (count($working_embeds) === 0 && count($embeds) > 0) {
+            $working_embeds = array_slice($embeds, 0, 2);
+          }
+          foreach (array_merge($stream_keys, $label_keys, $lang_keys) as $k) {
+            update_post_meta($post_id, $k, '');
+          }
+          $i = 0;
+          foreach ($working_embeds as $embed_item) {
+            if ($i >= count($stream_keys)) break;
+            $url = isset($embed_item['embedUrl']) ? trim((string) $embed_item['embedUrl']) : '';
+            if ($url === '') continue;
+            update_post_meta($post_id, $stream_keys[$i], esc_url_raw($url));
+            if (!empty($embed_item['label']) && is_string($embed_item['label'])) {
+              update_post_meta($post_id, $label_keys[$i], sanitize_text_field($embed_item['label']));
+            }
+            if (!empty($embed_item['language']) && is_string($embed_item['language'])) {
+              update_post_meta($post_id, $lang_keys[$i], sanitize_text_field($embed_item['language']));
+            }
+            $i++;
+          }
+          return $i;
+        }
+      }
+    }
+  }
+
+  $index_html = null;
+  if ($index) {
+    $index_html = flc_http_get($index);
+    if ($index_html) {
+      flc_populate_detail_urls_from_index($post_id, $index, $index_html);
+      $detail  = esc_url_raw(trim((string) get_post_meta($post_id, '_fl_detail_url', true)));
+      $detail2 = esc_url_raw(trim((string) get_post_meta($post_id, '_fl_detail_url_2', true)));
+      $detail3 = esc_url_raw(trim((string) get_post_meta($post_id, '_fl_detail_url_3', true)));
+      $detail4 = esc_url_raw(trim((string) get_post_meta($post_id, '_fl_detail_url_4', true)));
+    }
+  }
+  $candidates = array();
+  $add = function($url) use (&$candidates) {
+    $u = trim((string) $url);
+    if ($u !== '' && !in_array($u, $candidates, true)) $candidates[] = $u;
+  };
+  $add($detail);
+  $add($detail2);
+  $add($detail3);
+  $add($detail4);
+  if ($index && $index_html) {
+    $from_index = flc_extract_detail_urls_from_index_html($index, $index_html);
+    if (is_array($from_index)) { foreach ($from_index as $u) { $add($u); } }
+  }
+  foreach ($stream_keys as $k) { update_post_meta($post_id, $k, ''); }
+  $filled = 0;
+  foreach ($candidates as $d_url) {
+    if ($filled >= count($stream_keys)) break;
+    list($_ph, $_pa, $p_stream) = flc_extract_from_detail_url($d_url);
+    $p_stream = trim((string) $p_stream);
+    if ($p_stream === '') continue;
+    if (!flc_check_stream_url_alive($p_stream)) continue;
+    update_post_meta($post_id, $stream_keys[$filled], $p_stream);
+    $filled++;
+  }
+  return $filled;
+}
 
 // ----- Stream health checker (runs via WP-Cron every ~30 minutes) -----
 
@@ -925,6 +1199,22 @@ function flc_check_stream_url_alive($url) {
   // Treat common success/redirect codes as "alive"
   $ok_codes = array(200, 301, 302, 303, 307, 308);
   return in_array($code, $ok_codes, true);
+}
+
+/**
+ * Check if stream URL is alive, with short cache so we don't HEAD on every page view.
+ * Used on match/page display so only working links get a button.
+ */
+function flc_is_stream_url_alive_cached($url) {
+  $url = trim((string) $url);
+  if ($url === '') return false;
+  $key = 'fl_alive_' . md5($url);
+  $cached = get_transient($key);
+  if ($cached === '1') return true;
+  if ($cached === '0') return false;
+  $alive = flc_check_stream_url_alive($url);
+  set_transient($key, $alive ? '1' : '0', 2 * MINUTE_IN_SECONDS);
+  return $alive;
 }
 
 function flc_check_streams() {

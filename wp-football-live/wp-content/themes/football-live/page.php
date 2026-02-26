@@ -6,36 +6,44 @@ get_header();
 <main class="container section">
   <?php if (have_posts()) : while (have_posts()) : the_post(); ?>
     <?php
-      // If this page has stream links from the plugin, show player above the content.
+      // Only show buttons for stream URLs that respond (alive). 1 working = 1 button, etc.
       $streams = array();
       $labels  = array();
-      // Front-end pe sirf 4 links dikhayenge (Link 1–4)
+      $button_index = 0;
       for ($i = 1; $i <= 4; $i++) {
         $meta_key = ($i === 1) ? '_fl_stream_url' : '_fl_stream_url_' . $i;
+        $lang_key = ($i === 1) ? '_fl_stream_language' : '_fl_stream_language_' . $i;
         $url = trim((string) get_post_meta(get_the_ID(), $meta_key, true));
         if ($url === '') continue;
+        if (function_exists('flc_is_stream_url_alive_cached') && !flc_is_stream_url_alive_cached($url)) continue;
+        $button_index++;
         $streams[] = $url;
-        $labels[]  = 'Link ' . $i;
+        $language = trim((string) get_post_meta(get_the_ID(), $lang_key, true));
+        $label = 'Server ' . $button_index;
+        if ($language !== '') {
+          $label .= ' - ' . ucfirst($language);
+        }
+        $labels[] = $label;
       }
       $current_stream = isset($streams[0]) ? $streams[0] : '';
     ?>
 
     <?php if (!empty($streams)) : ?>
-      <?php if (count($streams) > 1) : ?>
-        <div class="stream-switcher">
-          <?php foreach ($streams as $idx => $url) : ?>
-            <button
-              type="button"
-              class="stream-link-btn<?php echo $idx === 0 ? ' is-active' : ''; ?>"
-              data-stream="<?php echo esc_attr($url); ?>"
-            >
-              <?php echo esc_html($labels[$idx]); ?>
-            </button>
-          <?php endforeach; ?>
-        </div>
-      <?php endif; ?>
+      <div class="stream-switcher">
+        <span class="stream-switcher-label">Stream</span>
+        <?php foreach ($streams as $idx => $url) : ?>
+          <button
+            type="button"
+            class="stream-link-btn<?php echo $idx === 0 ? ' is-active' : ''; ?>"
+            data-stream="<?php echo esc_attr($url); ?>"
+          >
+            <span class="stream-btn-dot" aria-hidden="true"></span>
+            <span class="stream-btn-text"><?php echo esc_html($labels[$idx]); ?></span>
+          </button>
+        <?php endforeach; ?>
+      </div>
 
-      <div class="iframe-wrap" style="margin-bottom:18px;">
+      <div class="iframe-wrap iframe-below-switcher" style="margin-bottom:18px;">
         <div class="ratio">
           <iframe
             class="page-stream-iframe"

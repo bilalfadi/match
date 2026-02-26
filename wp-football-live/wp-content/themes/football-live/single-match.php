@@ -7,17 +7,20 @@ while (have_posts()) : the_post();
   $home = get_post_meta($post_id, '_fl_home_team', true);
   $away = get_post_meta($post_id, '_fl_away_team', true);
 
-  // Collect up to 4 stream URLs + button labels (Server N - Language) from meta.
+  // Only show buttons for stream URLs that respond (alive). So 1 working = 1 button, 2 = 2, etc.
   $streams = array();
   $labels  = array();
+  $button_index = 0;
   for ($i = 1; $i <= 4; $i++) {
     $meta_key = ($i === 1) ? '_fl_stream_url' : '_fl_stream_url_' . $i;
     $lang_key = ($i === 1) ? '_fl_stream_language' : '_fl_stream_language_' . $i;
     $url = trim((string) get_post_meta($post_id, $meta_key, true));
     if ($url === '') continue;
+    if (function_exists('flc_is_stream_url_alive_cached') && !flc_is_stream_url_alive_cached($url)) continue;
+    $button_index++;
     $streams[] = $url;
     $language = trim((string) get_post_meta($post_id, $lang_key, true));
-    $label = 'Server ' . $i;
+    $label = 'Server ' . $button_index;
     if ($language !== '') {
       $label .= ' - ' . ucfirst($language);
     }
@@ -41,21 +44,21 @@ while (have_posts()) : the_post();
 
 <main class="container section">
   <?php if (!empty($streams)) : ?>
-    <?php if (count($streams) > 1) : ?>
-      <div class="stream-switcher">
-        <?php foreach ($streams as $idx => $url) : ?>
-          <button
-            type="button"
-            class="stream-link-btn<?php echo $idx === 0 ? ' is-active' : ''; ?>"
-            data-stream="<?php echo esc_attr($url); ?>"
-          >
-            <?php echo esc_html($labels[$idx]); ?>
-          </button>
-        <?php endforeach; ?>
-      </div>
-    <?php endif; ?>
+    <div class="stream-switcher">
+      <span class="stream-switcher-label">Stream</span>
+      <?php foreach ($streams as $idx => $url) : ?>
+        <button
+          type="button"
+          class="stream-link-btn<?php echo $idx === 0 ? ' is-active' : ''; ?>"
+          data-stream="<?php echo esc_attr($url); ?>"
+        >
+          <span class="stream-btn-dot" aria-hidden="true"></span>
+          <span class="stream-btn-text"><?php echo esc_html($labels[$idx]); ?></span>
+        </button>
+      <?php endforeach; ?>
+    </div>
 
-    <div class="iframe-wrap">
+    <div class="iframe-wrap iframe-below-switcher">
       <div class="ratio">
         <iframe
           class="match-stream-iframe"
